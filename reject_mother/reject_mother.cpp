@@ -3,8 +3,9 @@
 
 #include "stdafx.h"
 #include <Windows.h>
-
-
+#include <vector>
+#include <TlHelp32.h>
+using namespace std;
 
 
 bool AdjustProcessPrivilege(DWORD dwProcessId)
@@ -46,7 +47,7 @@ bool AdjustProcessPrivilege(DWORD dwProcessId)
 
 
 
-bool InjectDesProcess(DWORD dwProcessId)
+bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 {
 
 	BOOL bRet = FALSE;
@@ -70,7 +71,7 @@ bool InjectDesProcess(DWORD dwProcessId)
 		//在远程线程中分配地址空间来存放LoadLibraryA的参数  
 
 		TCHAR szDllPath[MAX_PATH] = { 0 };
-		_tcscpy_s(szDllPath, MAX_PATH, _T("INJDLL.dll"));  //DLL路径  
+		_tcscpy_s(szDllPath, MAX_PATH, dllPathName);  //DLL路径  
 		DWORD dwSize = lstrlen(szDllPath) * sizeof(TCHAR)+1;
 
 		PCWSTR* lpAddr = (PCWSTR*)::VirtualAllocEx(targetProcess, NULL, dwSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -111,9 +112,51 @@ bool InjectDesProcess(DWORD dwProcessId)
 }
 
 
+vector<DWORD> GetProcessIDByName(TCHAR * processName)
+{
+	vector<DWORD> processIDs;
+
+	PROCESSENTRY32 entry;
+	entry.dwSize = sizeof(PROCESSENTRY32);
+
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+	if (Process32First(snapshot, &entry) == TRUE)
+	{
+		while (Process32Next(snapshot, &entry) == TRUE)
+		{
+			if (strcmp(entry.szExeFile, processName) == 0)
+			{
+				processIDs.push_back(entry.th32ProcessID);
+			}
+		}
+	}
+	CloseHandle(snapshot);
+
+	return processIDs;
+}
+
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+	// <dllpathname> <target_process_name>
+	TCHAR dllPathName[255] = { 0 };
+	TCHAR targetProcName[255] = { 0 };
+	vector<DWORD> targetPids;
+	if (argc != 3)
+	{
+		exit(-1);
+	}
+	strcpy(dllPathName, argv[1]);
+	strcpy(targetProcName, argv[2]);
+
+	targetPids = GetProcessIDByName(targetProcName);
+
+	for (vector<DWORD>::iterator it = targetPids.begin(); it != targetPids.end(); it++)
+	{
+		printf("targetProcName %s id is %u \n", targetProcName, *it);
+	}
+
+	system("pause");
 	return 0;
 }
 
