@@ -62,11 +62,19 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 		//定位LoadLibraryA在kernel32.dll中的位置  
 		HMODULE hModule = ::GetModuleHandle(_T("Kernel32"));
 		if (hModule == NULL)
+		{
+			printf("get kernel32 failed\n");
 			return FALSE;
+		}
+			
 
-		PTHREAD_START_ROUTINE pfnLoadLibraryW = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("LoadLibraryW"));
+		PTHREAD_START_ROUTINE pfnLoadLibraryW = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("LoadLibraryA"));
 		if (pfnLoadLibraryW == NULL)
+		{
+			printf("get LoadLibraryW failed\n");
 			return FALSE;
+		}
+			
 
 		//在远程线程中分配地址空间来存放LoadLibraryA的参数  
 
@@ -76,29 +84,41 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 
 		PCWSTR* lpAddr = (PCWSTR*)::VirtualAllocEx(targetProcess, NULL, dwSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 		if (lpAddr == NULL)
+		{
+			printf("VirtualAllocEx failed\n");
 			return FALSE;
+		}
+			
 
 
 		//将数据写入到目标进程地址空间中去  
 		DWORD dwNumBytesOfWritten = 0;
 
 		bRet = ::WriteProcessMemory(targetProcess, lpAddr, (LPVOID)szDllPath, dwSize, &dwNumBytesOfWritten);
-
 		if (dwSize != dwNumBytesOfWritten)
 		{
+			printf("WriteProcessMemory failed\n");
 			::VirtualFreeEx(targetProcess, lpAddr, sizeof(szDllPath), MEM_RELEASE); //释放地址空间  
 			return FALSE;
 		}
 
 		if (!bRet)
+		{
+			printf("WriteProcessMemory failed\n");
 			return FALSE;
+		}
+			
 
 
 		//将指定DLL注入目标进程  
 		DWORD dwThreadId = 0;
 		HANDLE hRemoteThread = ::CreateRemoteThread(targetProcess, NULL, 0, (PTHREAD_START_ROUTINE)pfnLoadLibraryW, lpAddr, 0, &dwThreadId);
 		if (hRemoteThread == NULL)
+		{
+			printf("CreateRemoteThread failed %d \n", GetLastError());
 			return FALSE;
+		}
+			
 
 		::WaitForSingleObject(hRemoteThread, INFINITE);
 		::VirtualFreeEx(targetProcess, lpAddr, sizeof(szDllPath), MEM_RELEASE); //释放地址空间  
@@ -107,6 +127,7 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 	}
 	else
 	{
+		printf("privilege failed \n");
 		return FALSE;
 	}
 }
@@ -142,6 +163,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	TCHAR dllPathName[255] = { 0 };
 	TCHAR targetProcName[255] = { 0 };
 	vector<DWORD> targetPids;
+	bool ret = false;
 	if (argc != 3)
 	{
 		exit(-1);
@@ -150,12 +172,24 @@ int _tmain(int argc, _TCHAR* argv[])
 	strcpy(targetProcName, argv[2]);
 
 	targetPids = GetProcessIDByName(targetProcName);
+	DWORD targetPid;
 
 	for (vector<DWORD>::iterator it = targetPids.begin(); it != targetPids.end(); it++)
 	{
 		printf("targetProcName %s id is %u \n", targetProcName, *it);
+		targetPid = *it;
 	}
 
+
+	ret = InjectDesProcess(targetPid, "C:\\Program Files (x86)\\Google\\Chrome\\Application\\50.0.2661.102\\libegl.dll");
+	if (ret)
+	{
+		printf("inject success\n");
+	}
+	else
+	{
+		printf("inject failed \n");
+	}
 	system("pause");
 	return 0;
 }
