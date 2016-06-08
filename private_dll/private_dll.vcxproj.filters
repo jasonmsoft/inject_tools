@@ -27,6 +27,9 @@
     <ClInclude Include="private_dll.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="proto.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
