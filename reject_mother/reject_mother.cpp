@@ -6,26 +6,39 @@
 #include <vector>
 #include <TlHelp32.h>
 using namespace std;
+#pragma warning(disable: 4996)
 
 
 bool AdjustProcessPrivilege(DWORD dwProcessId)
 {
 	HANDLE hProcess = ::OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, dwProcessId); //以查询方式打开进程  
 	if (hProcess == NULL)
-		return FALSE;
+	{
+		printf("open process failed \n");
+		return false;
+	}
+		
 
 	HANDLE hToken = NULL;
-	BOOL bRet = FALSE;
+	bool bRet = false;
 	DWORD dwErr = 0;
 	bRet = ::OpenProcessToken(hProcess, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
 	dwErr = ::GetLastError();
 	if (!bRet)
-		return FALSE;
+	{
+		printf(" OpenProcessToken failed %d\n", dwErr);
+		return true;
+	}
+		
 
 	LUID luid;
 
 	if (::LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid) == 0)//查询权限值(设置权限值)  
-		return FALSE;
+	{
+		printf(" LookupPrivilegeValue failed \n");
+		return false;
+	}
+		
 
 	TOKEN_PRIVILEGES tkp;
 
@@ -38,19 +51,49 @@ bool AdjustProcessPrivilege(DWORD dwProcessId)
 	bRet = ::AdjustTokenPrivileges(hToken, FALSE, &tkp, 0, NULL, NULL); //调整权限  
 
 	if (!bRet)
-		return FALSE;
+	{
+		printf(" AdjustTokenPrivileges failed \n");
+		return false;
+	}
+		
 
 	::CloseHandle(hToken);
 	::CloseHandle(hProcess);
-	return TRUE;
+	return true;
 }
 
+typedef DWORD(WINAPI *PFNTCREATETHREADEX)
+(
+PHANDLE                 ThreadHandle,
+ACCESS_MASK             DesiredAccess,
+LPVOID                  ObjectAttributes,
+HANDLE                  ProcessHandle,
+LPTHREAD_START_ROUTINE  lpStartAddress,
+LPVOID                  lpParameter,
+BOOL                    CreateSuspended,
+DWORD                   dwStackSize,
+DWORD                   dw1,
+DWORD                   dw2,
+LPVOID                  Unknown
+);
+
+
+BOOL IsVistaOrLater()
+{
+	OSVERSIONINFO osvi;
+	ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+	GetVersionEx(&osvi);
+	if (osvi.dwMajorVersion >= 6)
+		return TRUE;
+	return FALSE;
+}
 
 
 bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 {
 
-	BOOL bRet = FALSE;
+	bool bRet = FALSE;
 	HANDLE targetProcess;
 	DWORD dwCurrProcessId = ::GetCurrentProcessId();
 	bRet = AdjustProcessPrivilege(dwCurrProcessId);    //手动提升当前进程权限  
@@ -92,7 +135,7 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 
 
 		//将数据写入到目标进程地址空间中去  
-		DWORD dwNumBytesOfWritten = 0;
+		SIZE_T dwNumBytesOfWritten = 0;
 
 		bRet = ::WriteProcessMemory(targetProcess, lpAddr, (LPVOID)szDllPath, dwSize, &dwNumBytesOfWritten);
 		if (dwSize != dwNumBytesOfWritten)
@@ -101,6 +144,8 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 			::VirtualFreeEx(targetProcess, lpAddr, sizeof(szDllPath), MEM_RELEASE); //释放地址空间  
 			return FALSE;
 		}
+
+		printf("write dll path: %s \n", szDllPath);
 
 		if (!bRet)
 		{
@@ -116,7 +161,35 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 		if (hRemoteThread == NULL)
 		{
 			printf("CreateRemoteThread failed %d \n", GetLastError());
-			return FALSE;
+			if (IsVistaOrLater())
+			{
+				void * pFunc = NULL;
+				pFunc = GetProcAddress(GetModuleHandle("ntdll.dll"), "NtCreateThreadEx");
+
+				//下面就是用地址执行了NtCreateThreadEx  
+				((PFNTCREATETHREADEX)pFunc)(
+					&hRemoteThread,
+					0x1FFFFF,
+					NULL,
+					targetProcess,
+					pfnLoadLibraryW,
+					lpAddr,
+					FALSE,
+					NULL,
+					NULL,
+					NULL,
+					NULL);
+
+				if (hRemoteThread == NULL)
+				{
+					printf("ntcreate remote thread failed %d\n", GetLastError());
+					return FALSE;
+				}
+			}
+			else
+			{
+				return FALSE;
+			}
 		}
 			
 
@@ -127,7 +200,14 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 	}
 	else
 	{
-		printf("privilege failed \n");
+		if (targetProcess == NULL)
+		{
+			printf("open target process failed  %d\n", GetLastError());
+		}
+		else
+		{
+			printf("privilege failed \n");
+		}
 		return FALSE;
 	}
 }
@@ -160,6 +240,8 @@ vector<DWORD> GetProcessIDByName(TCHAR * processName)
 int _tmain(int argc, _TCHAR* argv[])
 {
 	// <dllpathname> <target_process_name>
+
+
 	TCHAR dllPathName[255] = { 0 };
 	TCHAR targetProcName[255] = { 0 };
 	vector<DWORD> targetPids;
@@ -168,6 +250,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		exit(-1);
 	}
+
+
+
 	strcpy(dllPathName, argv[1]);
 	strcpy(targetProcName, argv[2]);
 
@@ -181,7 +266,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 
 
-	ret = InjectDesProcess(targetPid, "C:\\Program Files (x86)\\Google\\Chrome\\Application\\50.0.2661.102\\libegl.dll");
+	ret = InjectDesProcess(targetPid, dllPathName);
 	if (ret)
 	{
 		printf("inject success\n");
