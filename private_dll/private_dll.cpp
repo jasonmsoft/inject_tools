@@ -628,8 +628,6 @@ void Init(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 	bootstraphandler = (HANDLE)_beginthreadex(NULL, 0, &bootstrapProc, NULL, 0, &threadID3);
 	CloseHandle(bootstraphandler);
 
-	
-
 
 
 }
