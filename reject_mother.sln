@@ -53,6 +53,7 @@ Global
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|Win32.ActiveCfg = Release|Win32
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|Win32.Build.0 = Release|Win32
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|x64.ActiveCfg = Release|Win32
+		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|x64.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

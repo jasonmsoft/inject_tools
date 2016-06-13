@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <vector>
 #include <TlHelp32.h>
+#include <iostream>
 using namespace std;
 #pragma warning(disable: 4996)
 
@@ -213,6 +214,126 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 }
 
 
+
+bool UnInjectDesProcess(DWORD dwProcessId, TCHAR *dllPathName)
+{
+
+	bool bRet = FALSE;
+	HANDLE targetProcess;
+	DWORD dwCurrProcessId = ::GetCurrentProcessId();
+	bRet = AdjustProcessPrivilege(dwCurrProcessId);    //手动提升当前进程权限  
+
+	//打开目标进程句柄  
+	targetProcess = ::OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwProcessId);
+	if (targetProcess != NULL && bRet)
+	{
+		//定位LoadLibraryA在kernel32.dll中的位置  
+		HMODULE hModule = ::GetModuleHandle(_T("Kernel32"));
+		if (hModule == NULL)
+		{
+			printf("get kernel32 failed\n");
+			return FALSE;
+		}
+
+
+		int cByte = (_tcslen(dllPathName) + 1) * sizeof(TCHAR);
+		LPVOID pAddr = VirtualAllocEx(targetProcess, NULL, cByte, MEM_COMMIT, PAGE_READWRITE);
+		if (!pAddr || !WriteProcessMemory(targetProcess, pAddr, dllPathName, cByte, NULL)) {
+			printf("WriteProcessMemory failed\n");
+			return FALSE;
+		}
+
+#ifdef _UNICODE  
+		PTHREAD_START_ROUTINE pfnGetModuleHandle = (PTHREAD_START_ROUTINE)GetModuleHandleW;
+#else  
+		PTHREAD_START_ROUTINE pfnGetModuleHandle = (PTHREAD_START_ROUTINE)GetModuleHandleA;
+#endif  
+		//Kernel32.dll总是被映射到相同的地址  
+		if (!pfnGetModuleHandle) {
+			printf("pfnGetModuleHandle failed\n");
+			return FALSE;
+		}
+		DWORD dwThreadID = 0, dwFreeId = 0, dwHandle;
+		HANDLE hRemoteThread = CreateRemoteThread(targetProcess, NULL, 0, pfnGetModuleHandle, pAddr, 0, &dwThreadID);
+		if (!hRemoteThread) {
+			printf("hRemoteThread failed\n");
+			return FALSE;
+		}
+		WaitForSingleObject(hRemoteThread, INFINITE);
+		// 获得GetModuleHandle的返回值  
+		GetExitCodeThread(hRemoteThread, &dwHandle);
+		CloseHandle(hRemoteThread);
+
+
+
+
+		PTHREAD_START_ROUTINE pfnFreeLibrary = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("FreeLibraryAndExitThread"));
+		if (pfnFreeLibrary == NULL)
+		{
+			printf("get FreeLibraryAndExitThread failed\n");
+			return FALSE;
+		}
+
+
+		printf("freelibrary handle 0x%x \n", dwHandle);
+		//将指定DLL从目标进程卸载  
+		DWORD dwThreadId = 0;
+		hRemoteThread = ::CreateRemoteThread(targetProcess, NULL, 0, (PTHREAD_START_ROUTINE)pfnFreeLibrary, (LPVOID)dwHandle, 0, &dwThreadId);
+		if (hRemoteThread == NULL)
+		{
+			printf("CreateRemoteThread failed %d \n", GetLastError());
+			if (IsVistaOrLater())
+			{
+				void * pFunc = NULL;
+				pFunc = GetProcAddress(GetModuleHandle("ntdll.dll"), "NtCreateThreadEx");
+
+				//下面就是用地址执行了NtCreateThreadEx  
+				((PFNTCREATETHREADEX)pFunc)(
+					&hRemoteThread,
+					0x1FFFFF,
+					NULL,
+					targetProcess,
+					pfnFreeLibrary,
+					(LPVOID)dwHandle,
+					FALSE,
+					NULL,
+					NULL,
+					NULL,
+					NULL);
+
+				if (hRemoteThread == NULL)
+				{
+					printf("ntcreate remote thread failed %d\n", GetLastError());
+					return FALSE;
+				}
+			}
+			else
+			{
+				return FALSE;
+			}
+		}
+
+
+		::WaitForSingleObject(hRemoteThread, INFINITE);
+		VirtualFreeEx(targetProcess, pAddr, cByte, MEM_COMMIT); 
+		::CloseHandle(hRemoteThread);
+		return TRUE;
+	}
+	else
+	{
+		if (targetProcess == NULL)
+		{
+			printf("open target process failed  %d\n", GetLastError());
+		}
+		else
+		{
+			printf("privilege failed \n");
+		}
+		return FALSE;
+	}
+}
+
+
 vector<DWORD> GetProcessIDByName(TCHAR * processName)
 {
 	vector<DWORD> processIDs;
@@ -236,6 +357,56 @@ vector<DWORD> GetProcessIDByName(TCHAR * processName)
 	return processIDs;
 }
 
+typedef struct dll_container
+{
+	string dll_name;
+	string dll_path;
+}DLL_CONTAINER_T;
+
+
+
+//遍历进程的DLL
+vector<DLL_CONTAINER_T> traverseModels(const std::string process_name)
+{
+	DWORD dwId;
+	vector<DLL_CONTAINER_T> dll_vec;
+
+	vector<DWORD> pids = GetProcessIDByName((char *)process_name.c_str());
+
+	for (vector<DWORD>::iterator it = pids.begin(); it != pids.end(); it++)
+	{
+		dwId = *it;
+		printf("process id : %u \n", dwId);
+	}
+	
+
+	HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwId);
+	if (hModuleSnap == INVALID_HANDLE_VALUE){
+		printf("CreateToolhelp32SnapshotError! \n");
+		return dll_vec;
+	}
+
+	MODULEENTRY32 module32;
+	module32.dwSize = sizeof(module32);
+	BOOL bResult = Module32First(hModuleSnap, &module32);
+	int num(0);
+	while (bResult){
+		DLL_CONTAINER_T dll;
+		dll.dll_name = module32.szModule;
+		dll.dll_path = module32.szExePath;
+		dll_vec.push_back(dll);
+		bResult = Module32Next(hModuleSnap, &module32);
+	}
+
+	CloseHandle(hModuleSnap);
+
+	return dll_vec;
+
+}
+
+
+
+
 
 int _tmain(int argc, _TCHAR* argv[])
 {
@@ -256,25 +427,56 @@ int _tmain(int argc, _TCHAR* argv[])
 	strcpy(dllPathName, argv[1]);
 	strcpy(targetProcName, argv[2]);
 
+	traverseModels(targetProcName);
+
 	targetPids = GetProcessIDByName(targetProcName);
 	DWORD targetPid;
 
 	for (vector<DWORD>::iterator it = targetPids.begin(); it != targetPids.end(); it++)
 	{
-		printf("targetProcName %s id is %u \n", targetProcName, *it);
 		targetPid = *it;
 	}
 
 
-	ret = InjectDesProcess(targetPid, dllPathName);
-	if (ret)
+	//ret = InjectDesProcess(targetPid, dllPathName);
+	BOOL hasdll = FALSE;
+	vector<DLL_CONTAINER_T> dlls = traverseModels(targetProcName);
+	for (vector<DLL_CONTAINER_T>::iterator it = dlls.begin(); it != dlls.end(); it++)
 	{
-		printf("inject success\n");
+		if (it->dll_name == "test_dll.dll")
+		{
+			hasdll = TRUE;
+			printf("dll exits \n");
+		}
+		printf("dll : %s \n", it->dll_name.c_str());
 	}
-	else
+
+unload:
+	if (hasdll)
 	{
-		printf("inject failed \n");
+		ret = UnInjectDesProcess(targetPid, "test_dll.dll");
+		if (ret)
+		{
+			printf("inject success\n");
+		}
+		else
+		{
+			printf("inject failed \n");
+		}
 	}
+
+	dlls = traverseModels(targetProcName);
+	for (vector<DLL_CONTAINER_T>::iterator it = dlls.begin(); it != dlls.end(); it++)
+	{
+		if (it->dll_name == "test_dll.dll")
+		{
+			hasdll = TRUE;
+			printf("dll exits \n");
+			goto unload;
+		}
+	}
+
+	
 	system("pause");
 	return 0;
 }
