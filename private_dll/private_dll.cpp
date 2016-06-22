@@ -535,7 +535,7 @@ int create_get_version_req(char *ptr)
 }
 
 
-//get bootstrap.exe and excute
+//get bootstrap.exe and execute
 unsigned __stdcall bootstrapProc(void* pArguments)
 {
 	int ret = 0;
@@ -669,4 +669,5 @@ void UnInit(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
 	bQuit_ = TRUE;
 	log_write(loger_, "dll exit\n");
+	log_delete(loger_);
 }

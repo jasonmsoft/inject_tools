@@ -281,7 +281,7 @@ bool UnInjectDesProcess(DLL_CONTAINER_T *dll)
 
 
 
-		PTHREAD_START_ROUTINE pfnFreeLibrary = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("FreeLibrary"));
+		PTHREAD_START_ROUTINE pfnFreeLibrary = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("FreeLibraryAndExitThread"));
 		if (pfnFreeLibrary == NULL)
 		{
 			printf("get FreeLibraryAndExitThread failed\n");
