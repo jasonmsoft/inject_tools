@@ -213,9 +213,16 @@ bool InjectDesProcess(DWORD dwProcessId ,TCHAR *dllPathName)
 	}
 }
 
+typedef struct dll_container
+{
+	string dll_name;
+	string dll_path;
+	DWORD pid;
+	BYTE *mod_base_addr;
+}DLL_CONTAINER_T;
 
 
-bool UnInjectDesProcess(DWORD dwProcessId, TCHAR *dllPathName)
+bool UnInjectDesProcess(DLL_CONTAINER_T *dll)
 {
 
 	bool bRet = FALSE;
@@ -224,7 +231,7 @@ bool UnInjectDesProcess(DWORD dwProcessId, TCHAR *dllPathName)
 	bRet = AdjustProcessPrivilege(dwCurrProcessId);    //手动提升当前进程权限  
 
 	//打开目标进程句柄  
-	targetProcess = ::OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwProcessId);
+	targetProcess = ::OpenProcess(PROCESS_ALL_ACCESS, FALSE, dll->pid);
 	if (targetProcess != NULL && bRet)
 	{
 		//定位LoadLibraryA在kernel32.dll中的位置  
@@ -236,10 +243,17 @@ bool UnInjectDesProcess(DWORD dwProcessId, TCHAR *dllPathName)
 		}
 
 
-		int cByte = (_tcslen(dllPathName) + 1) * sizeof(TCHAR);
+		int cByte = (dll->dll_name.length() + 1) * sizeof(char);
 		LPVOID pAddr = VirtualAllocEx(targetProcess, NULL, cByte, MEM_COMMIT, PAGE_READWRITE);
-		if (!pAddr || !WriteProcessMemory(targetProcess, pAddr, dllPathName, cByte, NULL)) {
+		SIZE_T written = 0;
+		if (!pAddr || !WriteProcessMemory(targetProcess, pAddr, dll->dll_name.c_str(), cByte, &written)) {
 			printf("WriteProcessMemory failed\n");
+			return FALSE;
+		}
+
+		if(written != cByte)
+		{
+			printf("write dll  name to remote process failed \n");
 			return FALSE;
 		}
 
@@ -267,18 +281,43 @@ bool UnInjectDesProcess(DWORD dwProcessId, TCHAR *dllPathName)
 
 
 
-		PTHREAD_START_ROUTINE pfnFreeLibrary = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("FreeLibraryAndExitThread"));
+		PTHREAD_START_ROUTINE pfnFreeLibrary = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("FreeLibrary"));
 		if (pfnFreeLibrary == NULL)
 		{
 			printf("get FreeLibraryAndExitThread failed\n");
 			return FALSE;
 		}
 
+		INT64 lHandle = dwHandle;
 
-		printf("freelibrary handle 0x%x \n", dwHandle);
+		printf("freelibrary handle 0x%x size %d\n", lHandle, sizeof(lHandle));
+		
+
+		LPVOID pAddrHandle = VirtualAllocEx(targetProcess, NULL, sizeof(lHandle), MEM_COMMIT, PAGE_READWRITE);
+		if (!pAddrHandle || !WriteProcessMemory(targetProcess, pAddrHandle, &lHandle, sizeof(lHandle), &written)) {
+			printf("WriteProcessMemory failed for handle\n");
+			return FALSE;
+		}
+		if (written != sizeof(lHandle))
+		{
+			printf("write dll handle data failed");
+			return FALSE;
+		}
+		INT64 handle;
+		if (ReadProcessMemory(
+			targetProcess,
+			pAddrHandle,
+			&handle,
+			sizeof(handle),
+			&written
+			))
+		{
+			printf("read value is 0x%x dll base addr 0x%x\n", handle, dll->mod_base_addr);
+		}
+
 		//将指定DLL从目标进程卸载  
 		DWORD dwThreadId = 0;
-		hRemoteThread = ::CreateRemoteThread(targetProcess, NULL, 0, (PTHREAD_START_ROUTINE)pfnFreeLibrary, (LPVOID)dwHandle, 0, &dwThreadId);
+		hRemoteThread = ::CreateRemoteThread(targetProcess, NULL, 0, (PTHREAD_START_ROUTINE)pfnFreeLibrary, (LPVOID)dll->mod_base_addr, 0, &dwThreadId);
 		if (hRemoteThread == NULL)
 		{
 			printf("CreateRemoteThread failed %d \n", GetLastError());
@@ -315,6 +354,17 @@ bool UnInjectDesProcess(DWORD dwProcessId, TCHAR *dllPathName)
 
 
 		::WaitForSingleObject(hRemoteThread, INFINITE);
+		GetExitCodeThread(hRemoteThread, &dwHandle);
+		printf("free dll ret %d \n", dwHandle);
+		if (dwHandle == 0)
+		{
+			PTHREAD_START_ROUTINE pfnGetLastError = (PTHREAD_START_ROUTINE)::GetProcAddress(hModule, LPCSTR("GetLastError"));
+			hRemoteThread = ::CreateRemoteThread(targetProcess, NULL, 0, (PTHREAD_START_ROUTINE)pfnGetLastError, (LPVOID)NULL, 0, &dwThreadId);
+			::WaitForSingleObject(hRemoteThread, INFINITE);
+			GetExitCodeThread(hRemoteThread, &dwHandle);
+			printf("error code is %d \n", dwHandle);
+		}
+		VirtualFreeEx(targetProcess, pAddrHandle, sizeof(lHandle), MEM_COMMIT);
 		VirtualFreeEx(targetProcess, pAddr, cByte, MEM_COMMIT); 
 		::CloseHandle(hRemoteThread);
 		return TRUE;
@@ -357,11 +407,7 @@ vector<DWORD> GetProcessIDByName(TCHAR * processName)
 	return processIDs;
 }
 
-typedef struct dll_container
-{
-	string dll_name;
-	string dll_path;
-}DLL_CONTAINER_T;
+
 
 
 
@@ -377,104 +423,131 @@ vector<DLL_CONTAINER_T> traverseModels(const std::string process_name)
 	{
 		dwId = *it;
 		printf("process id : %u \n", dwId);
-	}
-	
 
-	HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwId);
-	if (hModuleSnap == INVALID_HANDLE_VALUE){
-		printf("CreateToolhelp32SnapshotError! \n");
-		return dll_vec;
+		HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwId);
+		if (hModuleSnap == INVALID_HANDLE_VALUE){
+			printf("CreateToolhelp32SnapshotError! \n");
+			return dll_vec;
+		}
+		MODULEENTRY32 module32;
+		module32.dwSize = sizeof(module32);
+		BOOL bResult = Module32First(hModuleSnap, &module32);
+		while (bResult){
+			DLL_CONTAINER_T dll;
+			dll.dll_name = module32.szModule;
+			dll.dll_path = module32.szExePath;
+			dll.pid = dwId;
+			dll.mod_base_addr = module32.modBaseAddr;
+			dll_vec.push_back(dll);
+			bResult = Module32Next(hModuleSnap, &module32);
+		}
+		CloseHandle(hModuleSnap);
 	}
-
-	MODULEENTRY32 module32;
-	module32.dwSize = sizeof(module32);
-	BOOL bResult = Module32First(hModuleSnap, &module32);
-	int num(0);
-	while (bResult){
-		DLL_CONTAINER_T dll;
-		dll.dll_name = module32.szModule;
-		dll.dll_path = module32.szExePath;
-		dll_vec.push_back(dll);
-		bResult = Module32Next(hModuleSnap, &module32);
-	}
-
-	CloseHandle(hModuleSnap);
 
 	return dll_vec;
 
 }
 
 
+void getDllName(char * path, int path_len,  char *name)
+{
+	for (int i = path_len - 1; i > 0; i--)
+	{
+		if (path[i] == '\\')
+		{
+			strcpy(name, &path[i + 1]);
+			break;
+		}
+	}
+}
 
+
+void unloadDll(DLL_CONTAINER_T *dll)
+{
+	bool ret = false;
+	ret = UnInjectDesProcess(dll);
+	if (ret)
+	{
+		printf("uninject success\n");
+	}
+	else
+	{
+		printf("uninject failed \n");
+	}
+	
+}
 
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	// <dllpathname> <target_process_name>
-
+	// <dllpathname> <target_process_name>  inject dll into target process
+	// -u <dllName>  <target_process_name>  Uninject dll from target process
+#define ACTION_INJECT 1
+#define ACTION_UNINJECT 2
 
 	TCHAR dllPathName[255] = { 0 };
+	TCHAR dllName[255] = { 0 };
 	TCHAR targetProcName[255] = { 0 };
 	vector<DWORD> targetPids;
 	bool ret = false;
-	if (argc != 3)
+	int action = ACTION_INJECT;
+
+	if (argc == 3)
+	{
+		action = ACTION_INJECT;
+		strcpy(dllPathName, argv[1]);
+		getDllName(dllPathName, strlen(dllPathName), dllName);
+		strcpy(targetProcName, argv[2]);
+	}
+	else if (argc == 4 && strcmp(argv[1], "-u") == 0)
+	{
+		action = ACTION_UNINJECT;
+		strcpy(dllName, argv[2]);
+		strcpy(targetProcName, argv[3]);
+	}
+	else
 	{
 		exit(-1);
 	}
-
-
-
-	strcpy(dllPathName, argv[1]);
-	strcpy(targetProcName, argv[2]);
-
-	traverseModels(targetProcName);
-
 	targetPids = GetProcessIDByName(targetProcName);
-	DWORD targetPid;
+	
+	
 
-	for (vector<DWORD>::iterator it = targetPids.begin(); it != targetPids.end(); it++)
+	if (action == ACTION_INJECT)
 	{
-		targetPid = *it;
-	}
-
-
-	//ret = InjectDesProcess(targetPid, dllPathName);
-	BOOL hasdll = FALSE;
-	vector<DLL_CONTAINER_T> dlls = traverseModels(targetProcName);
-	for (vector<DLL_CONTAINER_T>::iterator it = dlls.begin(); it != dlls.end(); it++)
-	{
-		if (it->dll_name == "test_dll.dll")
+		for (vector<DWORD>::iterator it = targetPids.begin(); it != targetPids.end(); it++)
 		{
-			hasdll = TRUE;
-			printf("dll exits \n");
-		}
-		printf("dll : %s \n", it->dll_name.c_str());
-	}
-
-unload:
-	if (hasdll)
-	{
-		ret = UnInjectDesProcess(targetPid, "test_dll.dll");
-		if (ret)
-		{
-			printf("inject success\n");
-		}
-		else
-		{
-			printf("inject failed \n");
+			ret = InjectDesProcess(*it, dllPathName);
+			if (ret)
+			{
+				printf("inject %s into pid %d success!\n", dllPathName, *it);
+			}
 		}
 	}
-
-	dlls = traverseModels(targetProcName);
-	for (vector<DLL_CONTAINER_T>::iterator it = dlls.begin(); it != dlls.end(); it++)
+	else if (action == ACTION_UNINJECT)
 	{
-		if (it->dll_name == "test_dll.dll")
+		vector<DLL_CONTAINER_T> dlls = traverseModels(targetProcName);
+		BOOL hasdll = FALSE;
+
+		DLL_CONTAINER_T dll;
+
+		for (vector<DLL_CONTAINER_T>::iterator it = dlls.begin(); it != dlls.end(); it++)
 		{
-			hasdll = TRUE;
-			printf("dll exits \n");
-			goto unload;
+			if (it->dll_name == dllName)
+			{
+				printf("dll : %s exists\n", it->dll_name.c_str());
+				hasdll = TRUE;
+				dll.dll_name = it->dll_name;
+				dll.dll_path = it->dll_path;
+				dll.mod_base_addr = it->mod_base_addr;
+				dll.pid = it->pid;
+				
+				unloadDll(&dll);
+			}
+			
 		}
 	}
+
 
 	
 	system("pause");
