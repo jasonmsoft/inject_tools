@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test_dll", "test_dll\test_d
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "private_dll", "private_dll\private_dll.vcxproj", "{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bootstrap", "bootstrap\bootstrap.vcxproj", "{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -61,6 +63,18 @@ Global
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|Win32.ActiveCfg = Release|Win32
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|Win32.Build.0 = Release|Win32
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Release|x64.ActiveCfg = Release|x64
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Debug|ARM.ActiveCfg = Debug|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Debug|Mixed Platforms.Build.0 = Debug|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Debug|Win32.ActiveCfg = Debug|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Debug|Win32.Build.0 = Debug|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Debug|x64.ActiveCfg = Debug|x64
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|ARM.ActiveCfg = Release|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|Mixed Platforms.ActiveCfg = Release|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|Mixed Platforms.Build.0 = Release|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|Win32.ActiveCfg = Release|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|Win32.Build.0 = Release|Win32
+		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|x64.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
