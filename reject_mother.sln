@@ -11,6 +11,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bootstrap", "bootstrap\boot
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wnd_hooks", "wnd_hooks\wnd_hooks.vcxproj", "{96C5A79E-B613-44AB-A1C3-4200C1496106}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "infector", "infector\infector.vcxproj", "{12521645-57F4-4796-B350-2659C64A5A45}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -73,6 +75,18 @@ Global
 		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|Win32.ActiveCfg = Release|Win32
 		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|Win32.Build.0 = Release|Win32
 		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|x64.ActiveCfg = Release|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Debug|ARM.ActiveCfg = Debug|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Debug|Mixed Platforms.Build.0 = Debug|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Debug|Win32.ActiveCfg = Debug|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Debug|Win32.Build.0 = Debug|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Debug|x64.ActiveCfg = Debug|x64
+		{12521645-57F4-4796-B350-2659C64A5A45}.Release|ARM.ActiveCfg = Release|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Release|Mixed Platforms.ActiveCfg = Release|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Release|Mixed Platforms.Build.0 = Release|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Release|Win32.ActiveCfg = Release|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Release|Win32.Build.0 = Release|Win32
+		{12521645-57F4-4796-B350-2659C64A5A45}.Release|x64.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
