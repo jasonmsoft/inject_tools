@@ -23,4 +23,15 @@ WND_HOOKS_API int fnwnd_hooks(void);
 
 void init();
 void uninit();
-WND_HOOKS_API LRESULT CALLBACK myMsgHook(int code, WPARAM wParam, LPARAM lParam);
+WND_HOOKS_API LRESULT CALLBACK MyKeyboardProc(
+	 int    code,
+	 WPARAM wParam,
+	 LPARAM lParam
+	);
+
+WND_HOOKS_API LRESULT CALLBACK MyMouseProc(
+	 int    nCode,
+	 WPARAM wParam,
+	 LPARAM lParam
+	);
+

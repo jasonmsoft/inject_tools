@@ -5,8 +5,6 @@ VisualStudioVersion = 12.0.21005.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "reject_mother", "reject_mother\reject_mother.vcxproj", "{C0F1ACE0-9544-452F-9ADB-4E7D35388E29}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test_dll", "test_dll\test_dll.vcxproj", "{287B206C-C6A5-479D-8200-E27DB6F7DB37}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "private_dll", "private_dll\private_dll.vcxproj", "{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bootstrap", "bootstrap\bootstrap.vcxproj", "{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}"
@@ -39,20 +37,6 @@ Global
 		{C0F1ACE0-9544-452F-9ADB-4E7D35388E29}.Release|Win32.Build.0 = Release|Win32
 		{C0F1ACE0-9544-452F-9ADB-4E7D35388E29}.Release|x64.ActiveCfg = Release|x64
 		{C0F1ACE0-9544-452F-9ADB-4E7D35388E29}.Release|x64.Build.0 = Release|x64
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|ARM.ActiveCfg = Debug|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|Mixed Platforms.Build.0 = Debug|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|Win32.ActiveCfg = Debug|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|Win32.Build.0 = Debug|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|x64.ActiveCfg = Debug|x64
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Debug|x64.Build.0 = Debug|x64
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|ARM.ActiveCfg = Release|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|Mixed Platforms.ActiveCfg = Release|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|Mixed Platforms.Build.0 = Release|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|Win32.ActiveCfg = Release|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|Win32.Build.0 = Release|Win32
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|x64.ActiveCfg = Release|x64
-		{287B206C-C6A5-479D-8200-E27DB6F7DB37}.Release|x64.Build.0 = Release|x64
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Debug|ARM.ActiveCfg = Debug|Win32
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
 		{D2B27BBC-DDCD-4FB9-9BDF-B47AF3C1326D}.Debug|Mixed Platforms.Build.0 = Debug|Win32
