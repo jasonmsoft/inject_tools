@@ -60,6 +60,7 @@ start_link() ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
 init([]) ->
+    self() ! 'init',
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -108,6 +109,12 @@ handle_cast(_Request, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
+
+handle_info('init', State) ->
+
+    {noreply, State};
+
+
 handle_info(_Info, State) ->
     {noreply, State}.
 

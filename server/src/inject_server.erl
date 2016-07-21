@@ -240,11 +240,14 @@ on_register(#client_info{client_addr = {IP, Port}}=_Client, Body) ->
     Info={OSVer, LocalIP, NumPartition, MacAddr},
     client_mgr:update_client(IP, Port, Info).
 
-on_download_reguest(Client, Body) ->
-    Reply = create_download_reply().
-
-on_default(Client, Body) ->
+on_download_reguest(#client_info{client_addr = {ClientIP, ClientPort}, client_sock=Sock}=Client, _Body) ->
+    {ok, IP, Port} = download_server:new_download_server(),
+    Reply = create_download_reply(IP, Port),
+    gen_udp:send(Sock, ClientIP, ClientPort, Reply)
     .
+
+on_default(_Client, _Body) ->
+    none.
 
 process_client_request(Client, Packet) ->
     <<_TotalLen:16, ?VERSION:64, MsgType:16, _BodyLen:16, _Body/binary>> = Packet,

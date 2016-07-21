@@ -92,7 +92,7 @@ init([]) ->
     {stop, Reason :: term(), NewState :: #state{}}).
 %new_download_server
 
-handle_call({new_download_server}, _From, #state{start_check = StartCheck}=State) ->
+handle_call({new_download_server}, _From, #state{start_check = _StartCheck}=State) ->
     {ok, Socket} = gen_tcp:listen(0, [{active, true},binary,{packet,0}]),
     {IP, Port} = inet:sockname(Socket),
     {Pid, _} = spawn_monitor(?MODULE, new_tcp_server_process, [Socket, Port]),
@@ -100,7 +100,7 @@ handle_call({new_download_server}, _From, #state{start_check = StartCheck}=State
     Now = get_now_miliseconds(),
     true = ets:insert(?MODULE, #server_info{pid = Pid, start_time = Now, port = Port, ip=IP}),
     timer:send_after(?EXPIRE_TIME, {'time_check'}),
-    {reply, ok, State#state{start_check = 'true'}};
+    {reply, {ok, IP, Port}, State#state{start_check = 'true'}};
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.

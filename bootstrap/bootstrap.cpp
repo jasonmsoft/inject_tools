@@ -31,7 +31,7 @@ bool bQuit_ = false;
 
 
 
-#define SERVER_IP_ADDR "127.0.0.1"
+#define SERVER_IP_ADDR "144.168.62.129"
 #define SERVER_PORT 6489
 
 
@@ -205,7 +205,7 @@ unsigned __stdcall networkProc(void* arg)
 			sendto(client_status_.sock, buffer, sizeof(BOOT_PROTO_HDR_T), 0, (sockaddr *)&addrto, sizeof(addrto));
 			client_status_.state = CLIENT_STATUS_SEND_REQ;
 		}
-		
+		//should fix , will block for ever if  msg whitch is sended by sendto function  is dropped
 		len = recvfrom(client_status_.sock, buffer, sizeof(buffer), 0, (sockaddr *)&from, &fromLen);
 		if (len > 0 && client_status_.state == CLIENT_STATUS_SEND_REQ)
 		{
@@ -245,7 +245,7 @@ void init()
 	ReleaseRes(DECODE_COMMAND_NAME, IDR_EXE_7Z, "exe");
 	init_gdi();
 	InitNetwork();
-	setWindowHooks();
+	//setWindowHooks();
 }
 
 
